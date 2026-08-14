@@ -32,6 +32,7 @@ import {
   X,
   FileSpreadsheet,
   Settings,
+  FileText,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import UserPortal from './UserPortal';
@@ -184,16 +185,16 @@ function SearchWithAssistance({ value, onChange, placeholder, suggestions = [], 
 function ConditionBadge({ label, count, type }) {
   const styles = {
     serviceable: { background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' },
-    repairable:  { background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' },
-    condemned:   { background: 'rgba(239,68,68,0.15)',  color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' },
+    repairable: { background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' },
+    condemned: { background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' },
   };
   const icons = {
     serviceable: <CheckCircle2 size={12} />,
-    repairable:  <Wrench size={12} />,
-    condemned:   <XCircle size={12} />,
+    repairable: <Wrench size={12} />,
+    condemned: <XCircle size={12} />,
   };
   return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:'4px', padding:'3px 8px', borderRadius:'12px', fontSize:'0.78rem', fontWeight:600, ...styles[type] }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 600, ...styles[type] }}>
       {icons[type]} {count} {label}
     </span>
   );
@@ -254,6 +255,9 @@ export default function App() {
   // Modals
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [showDescModal, setShowDescModal] = useState(false);
+  const [editingDescItem, setEditingDescItem] = useState(null);
+  const [descInput, setDescInput] = useState('');
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returningBorrow, setReturningBorrow] = useState(null);
@@ -376,6 +380,36 @@ export default function App() {
   });
 
   // ─── Item CRUD ───────────────────────────────────────────────────────────────
+  const openEditDescription = (item) => {
+    setEditingDescItem(item);
+    setDescInput(item.description || '');
+    setShowDescModal(true);
+  };
+
+  const saveDescription = async () => {
+    if (!editingDescItem) return;
+    try {
+      const res = await fetch(`${API_BASE}/items/${editingDescItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...editingDescItem,
+          description: descInput,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`📝 Description updated for "${editingDescItem.name}"`, 'success');
+        setShowDescModal(false);
+        fetchData();
+      } else {
+        showToast(`❌ Failed to update description: ${data.message || data.error}`, 'error');
+      }
+    } catch (err) {
+      showToast('❌ Network error while updating description.', 'error');
+    }
+  };
+
   const openAddItem = () => {
     setEditingItem(null);
     setItemForm({ name: '', category: 'Armory Equipment', unit_of_measure: 'pcs', serviceable_qty: 0, repairable_qty: 0, condemned_qty: 0, borrowable: true, image_url: '', description: '' });
@@ -551,10 +585,10 @@ export default function App() {
           </div>
           <div className="landing-unit-info">
             <div className="landing-unit-label">HEADQUARTERS</div>
-            <h1 className="landing-title">Caraga State University<br />ROTC Unit</h1>
-            <p className="landing-subtitle">Supply & Inventory Management System</p>
+            <h1 className="landing-title">Caraga State University<br />Main Campus<br />ROTC Unit</h1>
+            <p className="landing-subtitle">Inventory Management System</p>
             <div className="landing-unit-details">
-              <span>1501 (ADN) · 15th (CARAGA) RCDG · ARESCOM</span>
+              <span>1501st CDC · 15th RCDG · ARESCOM</span>
               <span>Ampayon, Butuan City</span>
             </div>
           </div>
@@ -569,7 +603,7 @@ export default function App() {
             </button>
           </div>
           <div className="landing-footer">
-            <span>S4 BDE Logistics · CDT LTC CHRISTIAN B ABAMO (ROTC)1CL</span>
+            <span>GMA · Cpl Christian B Abamo PA (Res)</span>
           </div>
         </div>
       </div>
@@ -659,8 +693,8 @@ export default function App() {
 
         <div className="sidebar-footer">
           <div className="sidebar-footer-text">
-            <span>S4 BDE Logistics</span>
-            <span>CDT LTC CHRISTIAN B ABAMO</span>
+            <span>Graduate Military Assistance</span>
+            <span>Cpl Christian B Abamo PA (Res)</span>
           </div>
         </div>
       </aside>
@@ -680,7 +714,7 @@ export default function App() {
             <div className="page-header">
               <div>
                 <h2 className="page-title">Readiness Overview</h2>
-                <p className="page-subtitle">HQ CSU ROTC Unit — Supply &amp; Equipment Status</p>
+                <p className="page-subtitle">CSU MAIN ROTC Unit — Supply &amp; Equipment Status</p>
               </div>
               <button className="btn btn-secondary" onClick={fetchData}>
                 <RefreshCw size={15} /> Refresh
@@ -743,7 +777,7 @@ export default function App() {
 
             {/* ── 3 DISTINCT DOMAIN INVENTORY SECTIONS (OFFICE, SUPPLY ROOM, ARMORY) ── */}
             <div className="domains-overview-container" style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '24px' }}>
-              
+
               {/* 🏢 1. OFFICE INVENTORY SECTION */}
               <div className="section-card domain-section-card">
                 <div className="domain-section-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '2px solid rgba(0,77,37,0.1)', paddingBottom: '12px' }}>
@@ -1254,6 +1288,7 @@ export default function App() {
                           <tr>
                             <th>#</th>
                             <th>Equipment Name</th>
+                            <th>Description &amp; Specifications</th>
                             <th>Category</th>
                             <th>Photo Status</th>
                             <th style={{ textAlign: 'center' }}>Admin Quick Actions</th>
@@ -1274,8 +1309,28 @@ export default function App() {
                                     )}
                                     <div>
                                       <strong>{item.name}</strong>
-                                      {item.description && <div className="item-desc">{item.description}</div>}
                                     </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '320px' }}>
+                                    {item.description ? (
+                                      <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                                        {item.description}
+                                      </span>
+                                    ) : (
+                                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                        No description added
+                                      </span>
+                                    )}
+                                    <button
+                                      className="btn-icon"
+                                      style={{ padding: '3px 6px', background: 'rgba(0, 77, 37, 0.08)', color: 'var(--csu-green-dark)', borderRadius: '6px', flexShrink: 0 }}
+                                      title="Edit Description"
+                                      onClick={() => openEditDescription(item)}
+                                    >
+                                      <FileText size={12} />
+                                    </button>
                                   </div>
                                 </td>
                                 <td>
@@ -1316,7 +1371,10 @@ export default function App() {
                                         ? <RefreshCw size={14} className="spin" />
                                         : <Upload size={14} />}
                                     </label>
-                                    <button className="btn-icon" title="Edit Equipment Details" onClick={() => openEditItem(item)}><Pencil size={14} /></button>
+                                    <button className="btn-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }} title="Edit Description" onClick={() => openEditDescription(item)}>
+                                      <FileText size={14} />
+                                    </button>
+                                    <button className="btn-icon" title="Edit Full Equipment Details" onClick={() => openEditItem(item)}><Pencil size={14} /></button>
                                     <button className="btn-icon btn-icon-red" title="Delete Equipment" onClick={() => deleteItem(item)}><Trash2 size={14} /></button>
                                   </div>
                                 </td>
@@ -1677,7 +1735,7 @@ export default function App() {
               <div>
                 <h2 className="page-title">Active Borrow Log</h2>
                 <p className="page-subtitle">{activeBorrowCount} active item(s) currently checked out by cadets</p>
-            </div>
+              </div>
             </div>
 
             {/* Log View Quick Tabs */}
@@ -1798,7 +1856,7 @@ export default function App() {
               <div>
                 <h2 className="page-title">Return History Log</h2>
                 <p className="page-subtitle">{returnedBorrowCount} completed return record(s) archived</p>
-            </div>
+              </div>
             </div>
 
             {/* Log View Quick Tabs */}
@@ -2149,6 +2207,45 @@ export default function App() {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowReturnModal(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={submitReturn}><LogIn size={14} /> Confirm Return</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT DESCRIPTION MODAL ────────────────────────────────────── */}
+      {showDescModal && editingDescItem && (
+        <div className="modal-overlay" onClick={() => setShowDescModal(false)}>
+          <div className="modal modal-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--csu-green-dark)' }}>
+                <FileText size={18} /> Edit Equipment Description
+              </h3>
+              <button className="modal-close" onClick={() => setShowDescModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '14px', background: '#f8f9fa', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                <strong style={{ fontSize: '0.95rem', color: 'var(--text-primary)', display: 'block' }}>{editingDescItem.name}</strong>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Category: {editingDescItem.category}</span>
+              </div>
+              <div className="form-group">
+                <label style={{ fontWeight: 700, fontSize: '0.85rem' }}>Description &amp; Specifications</label>
+                <textarea
+                  rows={4}
+                  className="form-input"
+                  placeholder="Enter detailed equipment description, serial numbers, dimensions, or condition notes..."
+                  value={descInput}
+                  onChange={e => setDescInput(e.target.value)}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowDescModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveDescription} style={{ fontWeight: 700 }}>
+                <CheckCircle2 size={16} /> Save Description
+              </button>
             </div>
           </div>
         </div>
