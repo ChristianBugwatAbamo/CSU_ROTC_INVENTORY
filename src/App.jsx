@@ -1102,6 +1102,18 @@ export default function App() {
                 </h2>
                 <p className="page-subtitle">Manage equipment specifications, profile photo uploads, borrowing permissions, and catalog registration</p>
               </div>
+              <div className="header-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setSettingsTab('add-equipment');
+                    setEditingItem(null);
+                    setItemForm({ name: '', category: 'Office Equipment', unit_of_measure: 'pcs', serviceable_qty: 1, repairable_qty: 0, condemned_qty: 0, borrowable: true, image_url: '', description: '' });
+                  }}
+                >
+                  <Plus size={15} /> Add New Equipment
+                </button>
+              </div>
             </div>
 
             {/* Settings Sub-Tab Navigation Bar */}
@@ -1122,7 +1134,11 @@ export default function App() {
               </button>
               <button
                 className={`btn ${settingsTab === 'add-equipment' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setSettingsTab('add-equipment')}
+                onClick={() => {
+                  setSettingsTab('add-equipment');
+                  setEditingItem(null);
+                  setItemForm({ name: '', category: 'Office Equipment', unit_of_measure: 'pcs', serviceable_qty: 1, repairable_qty: 0, condemned_qty: 0, borrowable: true, image_url: '', description: '' });
+                }}
                 style={{ fontWeight: 700 }}
               >
                 <Plus size={16} /> Add Equipment
@@ -1510,7 +1526,7 @@ export default function App() {
 
             {/* ── SUB-TAB 3: ADD NEW EQUIPMENT ───────────────────────── */}
             {settingsTab === 'add-equipment' && (
-              <div className="section-card" style={{ maxWidth: '720px', margin: '0 auto' }}>
+              <div className="section-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '14px' }}>
                   <div style={{ background: 'rgba(0, 77, 37, 0.12)', color: 'var(--csu-green-dark)', padding: '10px', borderRadius: '12px', display: 'flex' }}>
                     <Plus size={22} />
