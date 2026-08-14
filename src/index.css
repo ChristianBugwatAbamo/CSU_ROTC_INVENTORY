@@ -191,7 +191,8 @@ input, select, textarea { font-family: var(--font); }
 
 .tab-content {
   padding: 28px 32px;
-  max-width: 1200px;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* ─── Page Header ──────────────────────────────────────────────────────────── */
@@ -949,6 +950,37 @@ input, select, textarea { font-family: var(--font); }
   width: 100%;
 }
 
+.input-group-with-icon {
+  position: relative;
+  width: 100%;
+}
+
+.input-field-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.portal-input.input-has-icon {
+  padding-left: 36px;
+}
+
+.name-fields-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .name-fields-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .portal-input {
   width: 100%;
   padding: 10px 14px;
@@ -1291,11 +1323,9 @@ input, select, textarea { font-family: var(--font); }
 }
 
 .portal-body {
-  padding: 24px;
-  max-width: 960px;
-  margin: 0 auto;
+  padding: 24px 32px;
   width: 100%;
-
+  max-width: 100%;
 }
 
 .portal-loading, .portal-empty {

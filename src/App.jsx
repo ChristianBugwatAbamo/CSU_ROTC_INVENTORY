@@ -1136,18 +1136,6 @@ export default function App() {
                 </h2>
                 <p className="page-subtitle">Manage equipment specifications, profile photo uploads, borrowing permissions, and catalog registration</p>
               </div>
-              <div className="header-actions">
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setSettingsTab('add-equipment');
-                    setEditingItem(null);
-                    setItemForm({ name: '', category: 'Office Equipment', unit_of_measure: 'pcs', serviceable_qty: 1, repairable_qty: 0, condemned_qty: 0, borrowable: true, image_url: '', description: '' });
-                  }}
-                >
-                  <Plus size={15} /> Add New Equipment
-                </button>
-              </div>
             </div>
 
             {/* Settings Sub-Tab Navigation Bar */}
@@ -1291,12 +1279,11 @@ export default function App() {
                             <th>Description &amp; Specifications</th>
                             <th>Category</th>
                             <th>Photo Status</th>
-                            <th style={{ textAlign: 'center' }}>Admin Quick Actions</th>
+                            <th style={{ textAlign: 'center' }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredItems.map((item, idx) => {
-                            const isQuickUploading = quickUploadingId === item.id;
                             return (
                               <tr key={item.id}>
                                 <td className="row-num">{idx + 1}</td>
@@ -1355,26 +1342,7 @@ export default function App() {
                                 </td>
                                 <td>
                                   <div className="action-btns" style={{ justifyContent: 'center' }}>
-                                    <label
-                                      className={`btn-icon btn-icon-photo ${isQuickUploading ? 'uploading' : ''}`}
-                                      title={isQuickUploading ? 'Uploading image...' : item.image_url ? 'Change Photo' : 'Upload Photo'}
-                                      style={{ cursor: isQuickUploading ? 'wait' : 'pointer' }}
-                                    >
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        style={{ display: 'none' }}
-                                        disabled={isQuickUploading}
-                                        onChange={e => handleQuickImageUpload(item.id, e.target.files[0])}
-                                      />
-                                      {isQuickUploading
-                                        ? <RefreshCw size={14} className="spin" />
-                                        : <Upload size={14} />}
-                                    </label>
-                                    <button className="btn-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' }} title="Edit Description" onClick={() => openEditDescription(item)}>
-                                      <FileText size={14} />
-                                    </button>
-                                    <button className="btn-icon" title="Edit Full Equipment Details" onClick={() => openEditItem(item)}><Pencil size={14} /></button>
+                                    <button className="btn-icon" title="Edit Equipment Details" onClick={() => openEditItem(item)}><Pencil size={14} /></button>
                                     <button className="btn-icon btn-icon-red" title="Delete Equipment" onClick={() => deleteItem(item)}><Trash2 size={14} /></button>
                                   </div>
                                 </td>

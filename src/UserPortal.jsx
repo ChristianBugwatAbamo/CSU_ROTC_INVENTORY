@@ -36,14 +36,14 @@ function parseQRCode(raw) {
       borrower_id: String(obj.id || obj.studentId || obj.cadetId || obj.ID || '').trim(),
       borrower_name: String(obj.name || obj.fullName || obj.cadetName || '').trim(),
     };
-  } catch (_) {}
+  } catch (_) { }
   // Try URL query param
   try {
     const url = new URL(text);
     const id = url.searchParams.get('id') || url.searchParams.get('studentId') || url.searchParams.get('cadetId');
     const name = url.searchParams.get('name') || url.searchParams.get('fullName') || '';
     if (id) return { borrower_id: id.trim(), borrower_name: name.trim() };
-  } catch (_) {}
+  } catch (_) { }
   // Plain text = the ID itself
   return { borrower_id: text, borrower_name: '' };
 }
@@ -69,10 +69,10 @@ function QRScanner({ onScan, onClose }) {
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 240, height: 240 } },
           (decodedText) => {
-            scanner.stop().catch(() => {});
+            scanner.stop().catch(() => { });
             onScan(decodedText);
           },
-          () => {}
+          () => { }
         );
         setScanning(true);
       } catch (err) {
@@ -84,7 +84,7 @@ function QRScanner({ onScan, onClose }) {
 
     return () => {
       if (html5QrRef.current) {
-        html5QrRef.current.stop().catch(() => {});
+        html5QrRef.current.stop().catch(() => { });
       }
     };
   }, [onScan]);
@@ -404,7 +404,7 @@ export default function UserPortal({ onBack }) {
           <div className="portal-scan-card">
             <img src={CSU_ROTC_LOGO} alt="CSU ROTC" className="portal-logo" />
             <h1 className="portal-scan-title">Cadet Portal</h1>
-            <p className="portal-scan-sub">Scan your CSU ROTC ID card to borrow or return equipment</p>
+            <p className="portal-scan-sub">Scan your CSU ID to borrow or return equipment</p>
 
             {message && (
               <div className={`portal-message ${message.type}`}>
@@ -581,40 +581,40 @@ export default function UserPortal({ onBack }) {
                     (i.description && i.description.toLowerCase().includes(q));
                   return matchesDomain && matchesSearch;
                 }).map(item => (
-                <div key={item.id} className="portal-item-card">
-                  {/* Equipment Image — shown prominently as visual description */}
-                  <div className="portal-item-img-wrap">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt={item.name} className="portal-item-img" />
-                    ) : (
-                      <div className="portal-item-no-img">
-                        <Package size={28} style={{ color: 'rgba(0,77,37,0.25)' }} />
-                        <span>No photo</span>
-                      </div>
+                  <div key={item.id} className="portal-item-card">
+                    {/* Equipment Image — shown prominently as visual description */}
+                    <div className="portal-item-img-wrap">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.name} className="portal-item-img" />
+                      ) : (
+                        <div className="portal-item-no-img">
+                          <Package size={28} style={{ color: 'rgba(0,77,37,0.25)' }} />
+                          <span>No photo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="portal-item-cat">{item.category}</div>
+                    <div className="portal-item-name">{item.name}</div>
+                    {/* Equipment description from admin */}
+                    {item.description && (
+                      <div className="portal-item-description">{item.description}</div>
                     )}
+                    <div className="portal-item-stock">
+                      <CheckCircle2 size={13} style={{ color: '#10b981' }} />
+                      <span style={{ color: '#059669', fontWeight: 600 }}>{item.serviceable_qty} {item.unit_of_measure}</span>
+                      <span style={{ color: '#9ca3af' }}>available</span>
+                    </div>
+                    <button
+                      className="portal-borrow-btn"
+                      onClick={() => openBorrow(item)}
+                    >
+                      Borrow <ChevronRight size={15} />
+                    </button>
                   </div>
-                  <div className="portal-item-cat">{item.category}</div>
-                  <div className="portal-item-name">{item.name}</div>
-                  {/* Equipment description from admin */}
-                  {item.description && (
-                    <div className="portal-item-description">{item.description}</div>
-                  )}
-                  <div className="portal-item-stock">
-                    <CheckCircle2 size={13} style={{ color: '#10b981' }} />
-                    <span style={{ color: '#059669', fontWeight: 600 }}>{item.serviceable_qty} {item.unit_of_measure}</span>
-                    <span style={{ color: '#9ca3af' }}>available</span>
-                  </div>
-                  <button
-                    className="portal-borrow-btn"
-                    onClick={() => openBorrow(item)}
-                  >
-                    Borrow <ChevronRight size={15} />
-                  </button>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
-        </div>
         )}
 
 
@@ -802,32 +802,95 @@ export default function UserPortal({ onBack }) {
 // ─── Manual Entry Fallback ─────────────────────────────────────────────────────
 function ManualEntryForm({ onSubmit }) {
   const [id, setId] = useState('');
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [error, setError] = useState('');
+
+  // Validate ID format (XXX-XXXXX e.g. 221-01231)
+  const isValidId = (idStr) => {
+    return /^[A-Za-z0-9]{3}-[A-Za-z0-9]{5}$/.test(idStr.trim());
+  };
+
+  const handleIdChange = (e) => {
+    let val = e.target.value;
+    let digitsOnly = val.replace(/[^A-Za-z0-9]/g, '');
+    if (digitsOnly.length >= 8 && !val.includes('-')) {
+      val = `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 8)}`;
+    }
+    setId(val);
+    if (error) setError('');
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const cleanId = id.trim();
+    const cleanFirst = firstName.trim();
+    const cleanLast = lastName.trim();
+
+    if (!cleanId || !cleanFirst || !cleanLast) {
+      setError('Please fill in Student ID #, First Name, and Last Name.');
+      return;
+    }
+
+    if (!isValidId(cleanId)) {
+      setError('Student ID # format must be XXX-XXXXX (e.g. 221-01231).');
+      return;
+    }
+
+    const fullName = `${cleanFirst} ${cleanLast}`;
+    onSubmit(cleanId, fullName);
+  };
+
+  const canSubmit = id.trim() !== '' && firstName.trim() !== '' && lastName.trim() !== '';
+
   return (
-    <form className="manual-entry-form" onSubmit={e => { e.preventDefault(); if (id.trim()) onSubmit(id.trim(), name.trim()); }}>
+    <form className="manual-entry-form" onSubmit={handleSubmit}>
+      {error && (
+        <div style={{ color: '#ef4444', fontSize: '0.78rem', fontWeight: 600, textAlign: 'left', background: 'rgba(239, 68, 68, 0.08)', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Student ID # Input Field */}
       <div className="input-group-with-icon">
         <CreditCard size={17} className="input-field-icon" />
         <input
           className="portal-input input-has-icon"
-          placeholder="Enter Cadet ID (e.g. ROTC-2026-001) *"
+          placeholder="Enter Student ID # (e.g. 221-01231) *"
           value={id}
-          onChange={e => setId(e.target.value)}
+          onChange={handleIdChange}
           required
         />
       </div>
-      <div className="input-group-with-icon">
-        <User size={17} className="input-field-icon" />
-        <input
-          className="portal-input input-has-icon"
-          placeholder="Full Name (optional)"
-          value={name}
-          onChange={e => setName(e.target.value)}
-        />
+
+      {/* Split First Name and Last Name Inputs (Side-by-Side) */}
+      <div className="name-fields-row">
+        <div className="input-group-with-icon">
+          <User size={17} className="input-field-icon" />
+          <input
+            className="portal-input input-has-icon"
+            placeholder="First Name *"
+            value={firstName}
+            onChange={e => { setFirstName(e.target.value); if (error) setError(''); }}
+            required
+          />
+        </div>
+        <div className="input-group-with-icon">
+          <User size={17} className="input-field-icon" />
+          <input
+            className="portal-input input-has-icon"
+            placeholder="Last Name *"
+            value={lastName}
+            onChange={e => { setLastName(e.target.value); if (error) setError(''); }}
+            required
+          />
+        </div>
       </div>
+
       <button
         type="submit"
         className="portal-btn portal-btn-primary portal-submit-btn"
-        disabled={!id.trim()}
+        disabled={!canSubmit}
       >
         <span>Continue to Portal</span>
         <ChevronRight size={17} />
@@ -840,9 +903,9 @@ function ManualEntryForm({ onSubmit }) {
 function ClipboardListIcon({ size }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-      <path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <path d="M12 11h4" /><path d="M12 16h4" /><path d="M8 11h.01" /><path d="M8 16h.01" />
     </svg>
   );
 }
