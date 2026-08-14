@@ -25,6 +25,33 @@ import {
 const API_BASE = '/api/inventory';
 const CSU_ROTC_LOGO = '/csu-rotc-logo.png';
 
+// Robust Local & ISO Datetime Parser
+function parseExpectedReturnDate(dateStr) {
+  if (!dateStr) return null;
+  if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const dtMatch = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (dtMatch) {
+    const [, y, m, d, hh, mm, ss] = dtMatch;
+    return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), parseInt(hh), parseInt(mm), parseInt(ss || 0));
+  }
+  const dMatch = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dMatch) {
+    const [, y, m, d] = dMatch;
+    return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), 23, 59, 59);
+  }
+  const fallback = new Date(dateStr);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function checkIsOverdue(b) {
+  if (!b || b.status !== 'Active') return false;
+  const due = parseExpectedReturnDate(b.expected_return_date);
+  return due ? Date.now() > due.getTime() : false;
+}
+
 // ─── Parse QR Code content ────────────────────────────────────────────────────
 // Supports: plain ID string, JSON {id, name}, or URL with ?id= param
 function parseQRCode(raw) {
@@ -265,6 +292,7 @@ export default function UserPortal({ onBack }) {
   const [returningBorrow, setReturningBorrow] = useState(null);
   const [returnCondition, setReturnCondition] = useState('Good');
   const [returnNotes, setReturnNotes] = useState('');
+  const [receivedBy, setReceivedBy] = useState('Supply Officer / Duty Personnel');
 
   // ─── QR Scan Handler ────────────────────────────────────────────────────────
   const handleQRScan = useCallback((rawText) => {
@@ -307,7 +335,13 @@ export default function UserPortal({ onBack }) {
     setBorrowQty(1);
     const next = new Date();
     next.setDate(next.getDate() + 7);
-    setExpectedDate(next.toISOString().split('T')[0]);
+    next.setHours(17, 0, 0, 0);
+    const y = next.getFullYear();
+    const m = String(next.getMonth() + 1).padStart(2, '0');
+    const d = String(next.getDate()).padStart(2, '0');
+    const hh = String(next.getHours()).padStart(2, '0');
+    const mm = String(next.getMinutes()).padStart(2, '0');
+    setExpectedDate(`${y}-${m}-${d}T${hh}:${mm}`);
     setBorrowNotes('');
     setMessage(null);
     setShowBorrowModal(true);
@@ -355,11 +389,16 @@ export default function UserPortal({ onBack }) {
     setReturningBorrow(borrow);
     setReturnCondition('Good');
     setReturnNotes('');
+    setReceivedBy('Supply Officer / Duty Personnel');
     setMessage(null);
     setShowReturnModal(true);
   };
 
   const submitReturn = async () => {
+    if (!receivedBy.trim()) {
+      setMessage({ type: 'error', text: 'Please specify who received the item (Received By).' });
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/borrowings/${returningBorrow.id}/return`, {
@@ -368,6 +407,7 @@ export default function UserPortal({ onBack }) {
         body: JSON.stringify({
           return_condition: returnCondition,
           return_notes: returnNotes,
+          received_by: receivedBy.trim(),
           handled_by: cadet.borrower_name || cadet.borrower_id,
         }),
       });
@@ -386,8 +426,13 @@ export default function UserPortal({ onBack }) {
     }
   };
 
-  const activeCount = myBorrowings.filter(b => b.status === 'Active').length;
-  const overdueCount = myBorrowings.filter(b => b.is_overdue).length;
+  const myBorrowingsEnriched = myBorrowings.map(b => ({
+    ...b,
+    is_overdue: checkIsOverdue(b)
+  }));
+
+  const activeCount = myBorrowingsEnriched.filter(b => b.status === 'Active').length;
+  const overdueCount = myBorrowingsEnriched.filter(b => b.is_overdue).length;
 
   const formattedTime = realtime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const formattedDate = realtime.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -621,14 +666,14 @@ export default function UserPortal({ onBack }) {
         {/* ── MY BORROWINGS ─────────────────────────────────────────────────── */}
         {tab === 'myborrow' && !loading && (
           <div className="portal-borrow-list">
-            {myBorrowings.length === 0 ? (
+            {myBorrowingsEnriched.length === 0 ? (
               <div className="portal-empty">
-                <Shield size={36} />
+                <ClipboardListIcon size={36} />
                 <p>You have no borrowing records.</p>
                 <small>Borrow equipment and it will appear here.</small>
               </div>
             ) : (
-              myBorrowings.map(b => (
+              myBorrowingsEnriched.map(b => (
                 <div key={b.id} className={`portal-borrow-card ${b.is_overdue ? 'overdue' : ''} ${b.status === 'Returned' ? 'returned' : ''}`}>
                   <div className="portal-borrow-main">
                     <div className="portal-borrow-info">
@@ -642,7 +687,7 @@ export default function UserPortal({ onBack }) {
                         {' · '}
                         {b.status === 'Returned'
                           ? `Returned: ${new Date(b.actual_return_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at ${new Date(b.actual_return_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`
-                          : `Due: ${new Date(b.expected_return_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+                          : `Due: ${new Date(b.expected_return_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at ${new Date(b.expected_return_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`
                         }
                       </span>
                     </div>
@@ -704,11 +749,10 @@ export default function UserPortal({ onBack }) {
                 />
               </div>
               <div className="portal-form-group">
-                <label>Expected Return Date</label>
+                <label>Expected Return Date &amp; Time *</label>
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={expectedDate}
-                  min={new Date().toISOString().split('T')[0]}
                   onChange={e => setExpectedDate(e.target.value)}
                   className="portal-input"
                 />
@@ -775,6 +819,17 @@ export default function UserPortal({ onBack }) {
                 </div>
               </div>
               <div className="portal-form-group">
+                <label style={{ fontWeight: 700 }}>Received By *</label>
+                <input
+                  type="text"
+                  value={receivedBy}
+                  onChange={e => setReceivedBy(e.target.value)}
+                  placeholder="Officer or Personnel receiving item *"
+                  className="portal-input"
+                  required
+                />
+              </div>
+              <div className="portal-form-group">
                 <label>Notes (optional)</label>
                 <textarea
                   rows={2}
@@ -811,6 +866,11 @@ function ManualEntryForm({ onSubmit }) {
     return /^[A-Za-z0-9]{3}-[A-Za-z0-9]{5}$/.test(idStr.trim());
   };
 
+  // Validate Name format (letters, spaces, hyphens, and apostrophes only)
+  const isValidName = (nameStr) => {
+    return /^[a-zA-Z\s'-]+$/.test(nameStr.trim());
+  };
+
   const handleIdChange = (e) => {
     let val = e.target.value;
     let digitsOnly = val.replace(/[^A-Za-z0-9]/g, '');
@@ -818,6 +878,22 @@ function ManualEntryForm({ onSubmit }) {
       val = `${digitsOnly.slice(0, 3)}-${digitsOnly.slice(3, 8)}`;
     }
     setId(val);
+    if (error) setError('');
+  };
+
+  const handleFirstNameChange = (e) => {
+    const val = e.target.value;
+    // Restrict input to letters, spaces, hyphens, apostrophes
+    const filtered = val.replace(/[^a-zA-Z\s'-]/g, '');
+    setFirstName(filtered);
+    if (error) setError('');
+  };
+
+  const handleLastNameChange = (e) => {
+    const val = e.target.value;
+    // Restrict input to letters, spaces, hyphens, apostrophes
+    const filtered = val.replace(/[^a-zA-Z\s'-]/g, '');
+    setLastName(filtered);
     if (error) setError('');
   };
 
@@ -837,11 +913,21 @@ function ManualEntryForm({ onSubmit }) {
       return;
     }
 
+    if (!isValidName(cleanFirst)) {
+      setError('First Name must contain letters only (e.g. Juan).');
+      return;
+    }
+
+    if (!isValidName(cleanLast)) {
+      setError('Last Name must contain letters only (e.g. Dela Cruz).');
+      return;
+    }
+
     const fullName = `${cleanFirst} ${cleanLast}`;
     onSubmit(cleanId, fullName);
   };
 
-  const canSubmit = id.trim() !== '' && firstName.trim() !== '' && lastName.trim() !== '';
+  const canSubmit = id.trim() !== '' && isValidId(id) && isValidName(firstName) && isValidName(lastName);
 
   return (
     <form className="manual-entry-form" onSubmit={handleSubmit}>
@@ -871,7 +957,7 @@ function ManualEntryForm({ onSubmit }) {
             className="portal-input input-has-icon"
             placeholder="First Name *"
             value={firstName}
-            onChange={e => { setFirstName(e.target.value); if (error) setError(''); }}
+            onChange={handleFirstNameChange}
             required
           />
         </div>
@@ -881,7 +967,7 @@ function ManualEntryForm({ onSubmit }) {
             className="portal-input input-has-icon"
             placeholder="Last Name *"
             value={lastName}
-            onChange={e => { setLastName(e.target.value); if (error) setError(''); }}
+            onChange={handleLastNameChange}
             required
           />
         </div>

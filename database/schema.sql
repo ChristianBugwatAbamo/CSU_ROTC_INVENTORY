@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS borrowings (
     checkout_notes TEXT,
     return_notes TEXT,
     handled_by TEXT NOT NULL DEFAULT 'Supply Officer',
+    received_by TEXT,
     status TEXT CHECK(status IN ('Active', 'Returned', 'Overdue')) NOT NULL DEFAULT 'Active',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,

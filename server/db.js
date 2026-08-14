@@ -66,6 +66,13 @@ async function initDatabase() {
         db.run('ALTER TABLE items ADD COLUMN borrowable INTEGER NOT NULL DEFAULT 1;');
     }
 
+    // Add received_by column if missing in borrowings table
+    const borrowingsInfo = db.exec("PRAGMA table_info('borrowings');");
+    const hasReceivedBy = borrowingsInfo.length > 0 && borrowingsInfo[0].values.some(column => column[1] === 'received_by');
+    if (!hasReceivedBy) {
+        db.run('ALTER TABLE borrowings ADD COLUMN received_by TEXT;');
+    }
+
     saveDb();
 
     // Check if items count is 0

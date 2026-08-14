@@ -42,6 +42,33 @@ import CadetIdGenerator from './CadetIdGenerator';
 const API_BASE = '/api/inventory';
 const CSU_ROTC_LOGO = '/csu-rotc-logo.png';
 
+// Robust Local & ISO Datetime Parser
+export function parseExpectedReturnDate(dateStr) {
+  if (!dateStr) return null;
+  if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const dtMatch = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (dtMatch) {
+    const [, y, m, d, hh, mm, ss] = dtMatch;
+    return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), parseInt(hh), parseInt(mm), parseInt(ss || 0));
+  }
+  const dMatch = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dMatch) {
+    const [, y, m, d] = dMatch;
+    return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), 23, 59, 59);
+  }
+  const fallback = new Date(dateStr);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+export function checkIsOverdue(b) {
+  if (!b || b.status !== 'Active') return false;
+  const due = parseExpectedReturnDate(b.expected_return_date);
+  return due ? Date.now() > due.getTime() : false;
+}
+
 
 // ─── Native Excel (.xlsx) Exporter with Column Auto-Widths ───────────────────
 function exportToExcel(filename, rows, columns, sheetName = 'Equipment Status') {
@@ -275,10 +302,17 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Realtime ticker for live overdue updates
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Forms
   const [itemForm, setItemForm] = useState({ name: '', category: 'Armory Equipment', unit_of_measure: 'pcs', serviceable_qty: 0, repairable_qty: 0, condemned_qty: 0, borrowable: true, description: '' });
   const [checkoutForm, setCheckoutForm] = useState({ item_id: '', quantity: 1, borrower_name: '', borrower_id: '', borrower_contact: '', expected_return_date: '', checkout_notes: '', handled_by: 'CDT LTC CHRISTIAN B ABAMO' });
-  const [returnForm, setReturnForm] = useState({ return_condition: 'Good', return_notes: '', handled_by: 'CDT LTC CHRISTIAN B ABAMO' });
+  const [returnForm, setReturnForm] = useState({ return_condition: 'Good', return_notes: '', received_by: 'CDT LTC CHRISTIAN B ABAMO' });
 
   // ─── Fetch Data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async (silent = false) => {
@@ -349,7 +383,9 @@ export default function App() {
   };
 
   // ─── Computed ────────────────────────────────────────────────────────────────
-  const activeBorrowings = borrowings.filter(b => b.status === 'Active');
+  const activeBorrowings = borrowings
+    .filter(b => b.status === 'Active')
+    .map(b => ({ ...b, is_overdue: checkIsOverdue(b) }));
   const returnedBorrowings = borrowings.filter(b => b.status === 'Returned');
 
   const activeBorrowCount = activeBorrowings.length;
@@ -520,7 +556,26 @@ export default function App() {
   // ─── Checkout ────────────────────────────────────────────────────────────────
   const openCheckout = () => {
     const borrowableItems = items.filter(i => i.serviceable_qty > 0 && Boolean(i.borrowable));
-    setCheckoutForm({ item_id: borrowableItems.length ? borrowableItems[0].id : '', quantity: 1, borrower_name: '', borrower_id: '', borrower_contact: '', expected_return_date: '', checkout_notes: '', handled_by: 'CDT LTC CHRISTIAN B ABAMO' });
+    const next = new Date();
+    next.setDate(next.getDate() + 7);
+    next.setHours(17, 0, 0, 0);
+    const y = next.getFullYear();
+    const m = String(next.getMonth() + 1).padStart(2, '0');
+    const d = String(next.getDate()).padStart(2, '0');
+    const hh = String(next.getHours()).padStart(2, '0');
+    const mm = String(next.getMinutes()).padStart(2, '0');
+    const defaultDateTime = `${y}-${m}-${d}T${hh}:${mm}`;
+
+    setCheckoutForm({
+      item_id: borrowableItems.length ? borrowableItems[0].id : '',
+      quantity: 1,
+      borrower_name: '',
+      borrower_id: '',
+      borrower_contact: '',
+      expected_return_date: defaultDateTime,
+      checkout_notes: '',
+      handled_by: 'CDT LTC CHRISTIAN B ABAMO'
+    });
     setErrorMessage('');
     setShowCheckoutModal(true);
   };
@@ -541,12 +596,16 @@ export default function App() {
   // ─── Return ──────────────────────────────────────────────────────────────────
   const openReturn = (borrow) => {
     setReturningBorrow(borrow);
-    setReturnForm({ return_condition: 'Good', return_notes: '', handled_by: 'CDT LTC CHRISTIAN B ABAMO' });
+    setReturnForm({ return_condition: 'Good', return_notes: '', received_by: 'CDT LTC CHRISTIAN B ABAMO' });
     setErrorMessage('');
     setShowReturnModal(true);
   };
 
   const submitReturn = async () => {
+    if (!returnForm.received_by.trim()) {
+      setErrorMessage('Please enter who received the returned item (Received By).');
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE}/borrowings/${returningBorrow.id}/return`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(returnForm) });
       const data = await res.json();
@@ -1794,7 +1853,15 @@ export default function App() {
                                 {new Date(b.checkout_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
                               </div>
                             </td>
-                            <td className={`text-muted ${isOverdue ? 'text-red' : ''}`} style={{ fontSize: '0.83rem' }}>{new Date(b.expected_return_date).toLocaleDateString()}</td>
+                            <td className={`text-muted ${isOverdue ? 'text-red' : ''}`} style={{ fontSize: '0.83rem' }}>
+                              <div style={{ fontWeight: 600, color: isOverdue ? '#dc2626' : 'var(--text-primary)' }}>
+                                {new Date(b.expected_return_date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </div>
+                              <div style={{ fontSize: '0.76rem', color: isOverdue ? '#dc2626' : '#6b7280', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+                                <Clock size={11} />
+                                {new Date(b.expected_return_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </div>
+                            </td>
                             <td>
                               {isOverdue
                                 ? <span className="badge-status badge-overdue"><AlertTriangle size={11} /> Overdue</span>
@@ -1895,7 +1962,7 @@ export default function App() {
                         <th>Checkout Timestamp</th>
                         <th>Actual Return Timestamp</th>
                         <th>Condition</th>
-                        <th>Notes &amp; Handled By</th>
+                        <th>Received By &amp; Notes</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1935,8 +2002,11 @@ export default function App() {
                             {b.return_condition === 'Lost' && <span className="badge-status badge-overdue"><XCircle size={11} /> Lost</span>}
                           </td>
                           <td style={{ fontSize: '0.8rem' }}>
-                            {b.return_notes ? <div style={{ fontWeight: 500 }}>{b.return_notes}</div> : null}
-                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>By: {b.handled_by || 'Supply Officer'}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--csu-green-dark)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                              <span>Received By:</span>
+                              <span style={{ color: 'var(--text-primary)' }}>{b.received_by || b.handled_by || 'Supply Officer'}</span>
+                            </div>
+                            {b.return_notes ? <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>{b.return_notes}</div> : null}
                           </td>
                         </tr>
                       ))}
@@ -2120,8 +2190,8 @@ export default function App() {
                   <input className="form-input" value={checkoutForm.borrower_contact} onChange={e => setCheckoutForm(p => ({ ...p, borrower_contact: e.target.value }))} placeholder="Phone number" />
                 </div>
                 <div className="form-group">
-                  <label>Expected Return Date *</label>
-                  <input className="form-input" type="date" value={checkoutForm.expected_return_date} onChange={e => setCheckoutForm(p => ({ ...p, expected_return_date: e.target.value }))} />
+                  <label>Expected Return Date &amp; Time *</label>
+                  <input className="form-input" type="datetime-local" value={checkoutForm.expected_return_date} onChange={e => setCheckoutForm(p => ({ ...p, expected_return_date: e.target.value }))} />
                 </div>
               </div>
               <div className="form-group">
@@ -2168,7 +2238,17 @@ export default function App() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Return Notes</label>
+                <label style={{ fontWeight: 700 }}>Received By *</label>
+                <input
+                  className="form-input"
+                  value={returnForm.received_by}
+                  onChange={e => setReturnForm(p => ({ ...p, received_by: e.target.value }))}
+                  placeholder="Name of officer / personnel receiving item *"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Notes (optional)</label>
                 <textarea className="form-input" rows={2} value={returnForm.return_notes} onChange={e => setReturnForm(p => ({ ...p, return_notes: e.target.value }))} placeholder="Optional notes..." />
               </div>
             </div>

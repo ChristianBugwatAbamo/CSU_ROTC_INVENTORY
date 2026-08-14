@@ -34,6 +34,33 @@ initDatabase().catch(err => {
     console.error('Fatal DB Init Error:', err);
 });
 
+// Robust Local & ISO Datetime Parser
+function parseExpectedReturnDate(dateStr) {
+    if (!dateStr) return null;
+    if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
+        const d = new Date(dateStr);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    const dtMatch = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (dtMatch) {
+        const [, y, m, d, hh, mm, ss] = dtMatch;
+        return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), parseInt(hh), parseInt(mm), parseInt(ss || 0));
+    }
+    const dMatch = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dMatch) {
+        const [, y, m, d] = dMatch;
+        return new Date(parseInt(y), parseInt(m) - 1, parseInt(d), 23, 59, 59);
+    }
+    const fallback = new Date(dateStr);
+    return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+function checkIsOverdue(b) {
+    if (!b || b.status !== 'Active') return false;
+    const due = parseExpectedReturnDate(b.expected_return_date);
+    return due ? Date.now() > due.getTime() : false;
+}
+
 // ─── IMAGE UPLOAD ENDPOINT ───────────────────────────────────────────────────
 app.post(['/api/upload', '/api/inventory/upload'], upload.single('image'), (req, res) => {
     if (!req.file) {
@@ -68,10 +95,8 @@ app.get(['/api/summary', '/api/inventory/summary'], async (req, res) => {
         `);
 
         const borrowedRow = await get(`SELECT COUNT(*) as count FROM borrowings WHERE status = 'Active'`);
-        const overdueRow = await get(`
-            SELECT COUNT(*) as count FROM borrowings 
-            WHERE status = 'Active' AND expected_return_date < CURRENT_TIMESTAMP
-        `);
+        const activeRows = await all(`SELECT status, expected_return_date FROM borrowings WHERE status = 'Active'`);
+        const overdueCount = activeRows.filter(checkIsOverdue).length;
 
         res.json({
             totalItems: totalItemsRow.count,
@@ -80,7 +105,7 @@ app.get(['/api/summary', '/api/inventory/summary'], async (req, res) => {
             totalCondemned: totals.total_condemned || 0,
             byCategory: categoryRows,
             currentlyBorrowed: borrowedRow.count,
-            overdueCount: overdueRow.count
+            overdueCount: overdueCount
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -204,10 +229,9 @@ app.get(['/api/borrowings/by-cadet/:borrower_id', '/api/inventory/borrowings/by-
             WHERE b.borrower_id = ?
             ORDER BY b.created_at DESC
         `, [borrower_id]);
-        const now = new Date().toISOString();
         const enriched = rows.map(b => ({
             ...b,
-            is_overdue: b.status === 'Active' && b.expected_return_date < now
+            is_overdue: checkIsOverdue(b)
         }));
         res.json(enriched);
     } catch (err) {
@@ -236,10 +260,9 @@ app.get(['/api/borrowings', '/api/inventory/borrowings'], async (req, res) => {
 
         sql += ` ORDER BY b.created_at DESC`;
         const rows = await all(sql, params);
-        const now = new Date().toISOString();
         const enriched = rows.map(b => ({
             ...b,
-            is_overdue: b.status === 'Active' && b.expected_return_date < now
+            is_overdue: checkIsOverdue(b)
         }));
         res.json(enriched);
     } catch (err) {
@@ -262,10 +285,13 @@ app.post(['/api/borrowings', '/api/inventory/borrowings'], async (req, res) => {
         }
 
         const checkout_date = new Date().toISOString();
+        const parsedDue = parseExpectedReturnDate(expected_return_date);
+        const formattedReturnDate = parsedDue ? parsedDue.toISOString() : expected_return_date;
+
         const result = await run(
             `INSERT INTO borrowings (item_id, quantity, borrower_name, borrower_id, borrower_contact, checkout_date, expected_return_date, checkout_notes, handled_by, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')`,
-            [item_id, qty, borrower_name.trim(), borrower_id.trim(), borrower_contact || null, checkout_date, expected_return_date, checkout_notes || null, handled_by || 'Supply Officer']
+            [item_id, qty, borrower_name.trim(), borrower_id.trim(), borrower_contact || null, checkout_date, formattedReturnDate, checkout_notes || null, handled_by || 'Supply Officer']
         );
 
         // Deduct from serviceable quantity
@@ -284,9 +310,13 @@ app.post(['/api/borrowings', '/api/inventory/borrowings'], async (req, res) => {
 
 app.put(['/api/borrowings/:id/return', '/api/inventory/borrowings/:id/return'], async (req, res) => {
     const { id } = req.params;
-    const { return_condition, return_notes, handled_by } = req.body;
+    const { return_condition, return_notes, received_by, handled_by } = req.body;
+    const receiver = (received_by || handled_by || '').trim();
     if (!return_condition) {
         return res.status(400).json({ error: 'return_condition is required (Good, Damaged, or Lost).' });
+    }
+    if (!receiver) {
+        return res.status(400).json({ error: 'received_by (Received By) is required.' });
     }
     try {
         const borrowing = await get('SELECT * FROM borrowings WHERE id = ?', [id]);
@@ -295,8 +325,8 @@ app.put(['/api/borrowings/:id/return', '/api/inventory/borrowings/:id/return'], 
 
         const actualReturnDate = new Date().toISOString();
         await run(
-            `UPDATE borrowings SET status='Returned', actual_return_date=?, return_condition=?, return_notes=?, handled_by=COALESCE(?,handled_by), updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-            [actualReturnDate, return_condition, return_notes || null, handled_by || null, id]
+            `UPDATE borrowings SET status='Returned', actual_return_date=?, return_condition=?, return_notes=?, received_by=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+            [actualReturnDate, return_condition, return_notes || null, receiver, id]
         );
 
         // Add back to appropriate qty column based on condition
