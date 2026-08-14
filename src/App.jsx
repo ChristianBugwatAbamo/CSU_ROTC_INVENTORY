@@ -1526,7 +1526,7 @@ export default function App() {
 
             {/* ── SUB-TAB 3: ADD NEW EQUIPMENT ───────────────────────── */}
             {settingsTab === 'add-equipment' && (
-              <div className="section-card">
+              <div className="register-form-full-width">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', borderBottom: '1px solid var(--border)', paddingBottom: '14px' }}>
                   <div style={{ background: 'rgba(0, 77, 37, 0.12)', color: 'var(--csu-green-dark)', padding: '10px', borderRadius: '12px', display: 'flex' }}>
                     <Plus size={22} />

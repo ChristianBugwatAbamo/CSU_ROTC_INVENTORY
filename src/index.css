@@ -275,6 +275,15 @@ input, select, textarea { font-family: var(--font); }
   margin-bottom: 20px;
 }
 
+.register-form-full-width {
+  width: 100%;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent;
+  padding: 0;
+  margin-bottom: 24px;
+}
+
 .section-title {
   font-size: 0.95rem;
   font-weight: 700;
