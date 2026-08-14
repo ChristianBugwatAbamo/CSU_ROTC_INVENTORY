@@ -312,7 +312,7 @@ export default function App() {
   // Forms
   const [itemForm, setItemForm] = useState({ name: '', category: 'Armory Equipment', unit_of_measure: 'pcs', serviceable_qty: 0, repairable_qty: 0, condemned_qty: 0, borrowable: true, description: '' });
   const [checkoutForm, setCheckoutForm] = useState({ item_id: '', quantity: 1, borrower_name: '', borrower_id: '', borrower_contact: '', expected_return_date: '', checkout_notes: '', handled_by: 'CDT LTC CHRISTIAN B ABAMO' });
-  const [returnForm, setReturnForm] = useState({ return_condition: 'Good', return_notes: '', received_by: 'CDT LTC CHRISTIAN B ABAMO' });
+  const [returnForm, setReturnForm] = useState({ return_condition: 'Good', return_notes: '', received_by: '' });
 
   // ─── Fetch Data ─────────────────────────────────────────────────────────────
   const fetchData = useCallback(async (silent = false) => {
@@ -596,18 +596,27 @@ export default function App() {
   // ─── Return ──────────────────────────────────────────────────────────────────
   const openReturn = (borrow) => {
     setReturningBorrow(borrow);
-    setReturnForm({ return_condition: 'Good', return_notes: '', received_by: 'CDT LTC CHRISTIAN B ABAMO' });
+    setReturnForm({ return_condition: 'Good', return_notes: '', received_by: '' });
     setErrorMessage('');
     setShowReturnModal(true);
   };
 
   const submitReturn = async () => {
-    if (!returnForm.received_by.trim()) {
+    const receivedByVal = (returnForm.received_by || '').trim();
+    if (!receivedByVal) {
       setErrorMessage('Please enter who received the returned item (Received By).');
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/borrowings/${returningBorrow.id}/return`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(returnForm) });
+      const res = await fetch(`${API_BASE}/borrowings/${returningBorrow.id}/return`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          return_condition: returnForm.return_condition,
+          return_notes: returnForm.return_notes,
+          received_by: receivedByVal,
+        }),
+      });
       const data = await res.json();
       if (!res.ok) { setErrorMessage(data.message || data.error || 'Return failed.'); return; }
       setShowReturnModal(false);
@@ -2004,7 +2013,7 @@ export default function App() {
                           <td style={{ fontSize: '0.8rem' }}>
                             <div style={{ fontSize: '0.78rem', color: 'var(--csu-green-dark)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                               <span>Received By:</span>
-                              <span style={{ color: 'var(--text-primary)' }}>{b.received_by || b.handled_by || 'Supply Officer'}</span>
+                              <span style={{ color: 'var(--text-primary)' }}>{b.received_by || b.handled_by || 'Unspecified'}</span>
                             </div>
                             {b.return_notes ? <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>{b.return_notes}</div> : null}
                           </td>
@@ -2243,7 +2252,7 @@ export default function App() {
                   className="form-input"
                   value={returnForm.received_by}
                   onChange={e => setReturnForm(p => ({ ...p, received_by: e.target.value }))}
-                  placeholder="Name of officer / personnel receiving item *"
+                  placeholder="Enter receiving officer name (e.g. CDT LTC Christian Abamo) *"
                   required
                 />
               </div>

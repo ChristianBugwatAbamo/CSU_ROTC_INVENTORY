@@ -325,8 +325,8 @@ app.put(['/api/borrowings/:id/return', '/api/inventory/borrowings/:id/return'], 
 
         const actualReturnDate = new Date().toISOString();
         await run(
-            `UPDATE borrowings SET status='Returned', actual_return_date=?, return_condition=?, return_notes=?, received_by=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-            [actualReturnDate, return_condition, return_notes || null, receiver, id]
+            `UPDATE borrowings SET status='Returned', actual_return_date=?, return_condition=?, return_notes=?, received_by=?, handled_by=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+            [actualReturnDate, return_condition, return_notes || null, receiver, receiver, id]
         );
 
         // Add back to appropriate qty column based on condition

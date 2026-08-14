@@ -53,26 +53,38 @@ function checkIsOverdue(b) {
 }
 
 // ─── Parse QR Code content ────────────────────────────────────────────────────
-// Supports: plain ID string, JSON {id, name}, or URL with ?id= param
+// Supports: plain ID string (e.g. 221-01232), JSON {id, name}, or URL with ?id= param
 function parseQRCode(raw) {
-  const text = raw.trim();
-  // Try JSON
+  if (!raw) return { borrower_id: '', borrower_name: '' };
+  const text = String(raw).trim();
+
+  // 1. Try JSON payload
   try {
     const obj = JSON.parse(text);
-    return {
-      borrower_id: String(obj.id || obj.studentId || obj.cadetId || obj.ID || '').trim(),
-      borrower_name: String(obj.name || obj.fullName || obj.cadetName || '').trim(),
-    };
+    if (obj && typeof obj === 'object') {
+      const parsedId = String(obj.id || obj.studentId || obj.cadetId || obj.ID || '').trim();
+      const parsedName = String(obj.name || obj.fullName || obj.cadetName || '').trim();
+      if (parsedId) {
+        return { borrower_id: parsedId, borrower_name: parsedName };
+      }
+    }
   } catch (_) { }
-  // Try URL query param
+
+  // 2. Try URL query param
   try {
     const url = new URL(text);
     const id = url.searchParams.get('id') || url.searchParams.get('studentId') || url.searchParams.get('cadetId');
     const name = url.searchParams.get('name') || url.searchParams.get('fullName') || '';
     if (id) return { borrower_id: id.trim(), borrower_name: name.trim() };
   } catch (_) { }
-  // Plain text = the ID itself
-  return { borrower_id: text, borrower_name: '' };
+
+  // 3. Plain text string (e.g., "221-01232" or "22101232")
+  let cleanText = text;
+  if (/^\d{8}$/.test(cleanText)) {
+    cleanText = `${cleanText.slice(0, 3)}-${cleanText.slice(3, 8)}`;
+  }
+
+  return { borrower_id: cleanText, borrower_name: '' };
 }
 
 // ─── QR Scanner Component ─────────────────────────────────────────────────────
@@ -94,7 +106,11 @@ function QRScanner({ onScan, onClose }) {
 
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 240, height: 240 } },
+          {
+            fps: 10,
+            qrbox: { width: 220, height: 220 },
+            aspectRatio: 1.0,
+          },
           (decodedText) => {
             scanner.stop().catch(() => { });
             onScan(decodedText);
@@ -292,17 +308,20 @@ export default function UserPortal({ onBack }) {
   const [returningBorrow, setReturningBorrow] = useState(null);
   const [returnCondition, setReturnCondition] = useState('Good');
   const [returnNotes, setReturnNotes] = useState('');
-  const [receivedBy, setReceivedBy] = useState('Supply Officer / Duty Personnel');
+  const [receivedBy, setReceivedBy] = useState('');
 
   // ─── QR Scan Handler ────────────────────────────────────────────────────────
   const handleQRScan = useCallback((rawText) => {
     setShowScanner(false);
     const parsed = parseQRCode(rawText);
     if (!parsed.borrower_id) {
-      setMessage({ type: 'error', text: 'Could not read ID from QR code. Please try again.' });
+      setMessage({ type: 'error', text: 'Could not read Student ID from QR code. Please try again.' });
       return;
     }
-    setCadet(parsed);
+    setCadet({
+      borrower_id: parsed.borrower_id,
+      borrower_name: parsed.borrower_name || `Cadet (${parsed.borrower_id})`,
+    });
     setStep('portal');
   }, []);
 
@@ -317,7 +336,16 @@ export default function UserPortal({ onBack }) {
       ]);
       const [itemsData, myBorrowData] = await Promise.all([itemsRes.json(), myBorrowRes.json()]);
       setAllItems(Array.isArray(itemsData) ? itemsData.filter(i => i.serviceable_qty > 0 && Boolean(i.borrowable)) : []);
-      setMyBorrowings(Array.isArray(myBorrowData) ? myBorrowData : []);
+      const myBorrows = Array.isArray(myBorrowData) ? myBorrowData : [];
+      setMyBorrowings(myBorrows);
+
+      // Auto-restore cadet name if plain ID scanned and cadet has prior borrowings
+      if ((!cadet.borrower_name || cadet.borrower_name.startsWith('Cadet (')) && myBorrows.length > 0) {
+        const knownName = myBorrows.find(b => b.borrower_name && !b.borrower_name.startsWith('Cadet ('))?.borrower_name;
+        if (knownName) {
+          setCadet(prev => ({ ...prev, borrower_name: knownName }));
+        }
+      }
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load data. Please try again.' });
     } finally {
@@ -389,7 +417,7 @@ export default function UserPortal({ onBack }) {
     setReturningBorrow(borrow);
     setReturnCondition('Good');
     setReturnNotes('');
-    setReceivedBy('Supply Officer / Duty Personnel');
+    setReceivedBy('');
     setMessage(null);
     setShowReturnModal(true);
   };
@@ -408,7 +436,6 @@ export default function UserPortal({ onBack }) {
           return_condition: returnCondition,
           return_notes: returnNotes,
           received_by: receivedBy.trim(),
-          handled_by: cadet.borrower_name || cadet.borrower_id,
         }),
       });
       const data = await res.json();
@@ -465,10 +492,16 @@ export default function UserPortal({ onBack }) {
 
             <div className="portal-divider"><span>or enter manually</span></div>
 
-            <ManualEntryForm onSubmit={(id, name) => {
-              setCadet({ borrower_id: id, borrower_name: name });
-              setStep('portal');
-            }} />
+            <ManualEntryForm
+              onSubmit={(id, name) => {
+                setCadet({ borrower_id: id, borrower_name: name });
+                setStep('portal');
+              }}
+              onScanClick={() => {
+                setMessage(null);
+                setShowScanner(true);
+              }}
+            />
           </div>
         </div>
       </div>
@@ -824,7 +857,7 @@ export default function UserPortal({ onBack }) {
                   type="text"
                   value={receivedBy}
                   onChange={e => setReceivedBy(e.target.value)}
-                  placeholder="Officer or Personnel receiving item *"
+                  placeholder="Enter receiving officer name (e.g. CDT LTC Christian Abamo) *"
                   className="portal-input"
                   required
                 />
@@ -855,7 +888,7 @@ export default function UserPortal({ onBack }) {
 }
 
 // ─── Manual Entry Fallback ─────────────────────────────────────────────────────
-function ManualEntryForm({ onSubmit }) {
+function ManualEntryForm({ onSubmit, onScanClick }) {
   const [id, setId] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -938,7 +971,7 @@ function ManualEntryForm({ onSubmit }) {
       )}
 
       {/* Student ID # Input Field */}
-      <div className="input-group-with-icon">
+      <div className="input-group-with-icon" style={{ position: 'relative' }}>
         <CreditCard size={17} className="input-field-icon" />
         <input
           className="portal-input input-has-icon"
@@ -946,7 +979,18 @@ function ManualEntryForm({ onSubmit }) {
           value={id}
           onChange={handleIdChange}
           required
+          style={{ paddingRight: onScanClick ? '80px' : undefined }}
         />
+        {onScanClick && (
+          <button
+            type="button"
+            className="input-qr-scan-btn"
+            onClick={onScanClick}
+            title="Scan QR Code to Auto-Fill ID"
+          >
+            <Camera size={14} /> Scan
+          </button>
+        )}
       </div>
 
       {/* Split First Name and Last Name Inputs (Side-by-Side) */}
